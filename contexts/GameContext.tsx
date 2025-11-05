@@ -79,18 +79,18 @@ export const GameProvider = ({ children }: GameProviderProps) => {
   useEffect(() => {
     if (!room || room.status !== 'running') return;
 
-    const isModulesEmpty =
+    // ✅ Vérifie si les modules sont vraiment absents ou non initialisés
+    const modulesAreEmpty =
       !room.modules ||
       (typeof room.modules === 'object' &&
-        room.modules !== null &&
-        Object.keys(room.modules).length === 0);
+        Object.keys(room.modules || {}).length === 0);
 
-    if (isModulesEmpty) {
-      console.log('GameContext: Initializing modules for phase', room.phase);
+    if (modulesAreEmpty) {
+      console.log('[GameContext] Initializing modules for phase', room.phase);
       const initialModules = initializeModules(room.phase);
       updateModulesInFirestore(room.id, initialModules);
     }
-  }, [room?.id, room?.status, room?.phase, room?.modules]);
+  }, [room?.id, room?.status, room?.phase]); // ✅ dépendances limitées → plus de boucle infinie
 
   // --- Premier message LYRA ---
   useEffect(() => {
@@ -143,7 +143,7 @@ export const GameProvider = ({ children }: GameProviderProps) => {
     if (!room) return;
     setModules(room.modules || null);
     setSyncWindow(room.syncWindow || null);
-  }, [room?.id, room?.modules, room?.syncWindow]);
+  }, [room?.modules, room?.syncWindow]);
 
   // --- Timer global (support Timestamp OU Date) ---
   useEffect(() => {
@@ -153,12 +153,9 @@ export const GameProvider = ({ children }: GameProviderProps) => {
     }
 
     const getEndsAtMs = () => {
-      const v = room.timer.endsAt;
+      const v = room.timer?.endsAt;
       if (!v) return undefined;
-      // Firestore Timestamp
-      // @ts-ignore
       if (typeof v?.toMillis === 'function') return v.toMillis();
-      // Date ou string
       const ms = new Date(v as any).getTime();
       return Number.isFinite(ms) ? ms : undefined;
     };
@@ -199,7 +196,14 @@ export const GameProvider = ({ children }: GameProviderProps) => {
     } else if (!shouldPause && room.timer.paused) {
       setTimerPaused(room.id, false);
     }
-  }, [room?.id, room?.status, room?.players, room?.requiredPlayers, room?.timer?.paused, isHost]);
+  }, [
+    room?.id,
+    room?.status,
+    room?.players,
+    room?.requiredPlayers,
+    room?.timer?.paused,
+    isHost,
+  ]);
 
   // --- Navigation entre salles ---
   const changeRoom = (direction: 'left' | 'right') => {
@@ -217,7 +221,13 @@ export const GameProvider = ({ children }: GameProviderProps) => {
   // --- Phase suivante (outil host) ---
   const forceNextPhase = () => {
     if (!isHost || !room) return;
-    const phases: Room['phase'][] = ['intro', 'act1', 'act2', 'act3', 'epilogue'];
+    const phases: Room['phase'][] = [
+      'intro',
+      'act1',
+      'act2',
+      'act3',
+      'epilogue',
+    ];
     const i = phases.indexOf(room.phase);
     const next = phases[i + 1];
     if (next) setGamePhase(room.id, next);
