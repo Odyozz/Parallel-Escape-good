@@ -140,7 +140,7 @@ const MissionDetailPage = () => {
 
     try {
       // Nombre de joueurs strict pour cette mission (design: 3)
-      const requiredPlayers = 3;
+      const requiredPlayers = 1;
       const roomId = await createRoom(user, mission.id, requiredPlayers);
       const inviteLink = `${window.location.origin}/play?room=${roomId}`;
 
