@@ -3,8 +3,9 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import Header from '../../components/common/Header';
-import Footer from '../../components/common/Footer';
+// ❌ SUPPRIMÉS: Header/Footer (Server Components à laisser au layout)
+// import Header from '../../components/common/Header';
+// import Footer from '../../components/common/Footer';
 import { RoomProvider, useRoom } from '../../contexts/RoomContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { joinRoom } from '../../utils/room';
@@ -13,7 +14,7 @@ import PlayerList from '../../components/lobby/PlayerList';
 import LobbyStatus from '../../components/lobby/LobbyStatus';
 import Toast from '../../components/ui/Toast';
 import Button from '../../components/ui/Button';
-import router from 'next/router';
+// ❌ SUPPRIMÉ: import router from 'next/router';
 
 function LobbyContent() {
   const { room, loading, error, leaveRoom } = useRoom();
@@ -64,7 +65,7 @@ function LobbyContent() {
     } catch (error) {
       console.error('Error joining room:', error);
       setToast({
-        message: 'Une erreur est survenue lors de la rejointe de la room.',
+        message: 'Une erreur est survenue lors de la jonction à la room.',
         type: 'error',
       });
     } finally {
@@ -88,7 +89,7 @@ function LobbyContent() {
   if (error) {
     return (
       <div className="error-page">
-        <Header />
+        {/* Header laissé au layout */}
         <div className="container">
           <div className="error-content">
             <h2>Erreur</h2>
@@ -98,7 +99,7 @@ function LobbyContent() {
             </Button>
           </div>
         </div>
-        <Footer />
+        {/* Footer laissé au layout */}
 
         <style jsx>{`
           .error-page {
@@ -134,7 +135,6 @@ function LobbyContent() {
   if (!room) {
     return (
       <div className="error-page">
-        <Header />
         <div className="container">
           <div className="error-content">
             <h2>Room introuvable</h2>
@@ -144,7 +144,6 @@ function LobbyContent() {
             </Button>
           </div>
         </div>
-        <Footer />
 
         <style jsx>{`
           .error-page {
@@ -181,14 +180,13 @@ function LobbyContent() {
   if (room.status === 'paused') {
     return (
       <div className="lobby-page">
-        <Header />
         <section className="lobby section">
           <div className="container">
             <div className="paused-overlay">
               <h2>Partie en Pause</h2>
               <p>
                 Un joueur s'est déconnecté. Toutes les interactions sont
-                verrouillées en attendant sa reconnection.
+                verrouillées en attendant sa reconnexion.
               </p>
               <div className="loading-spinner"></div>
               <Button variant="secondary" onClick={handleLeaveRoom}>
@@ -197,7 +195,6 @@ function LobbyContent() {
             </div>
           </div>
         </section>
-        <Footer />
 
         <style jsx>{`
           .paused-overlay {
@@ -227,7 +224,6 @@ function LobbyContent() {
   if (room.status === 'ended') {
     return (
       <div className="ended-page">
-        <Header />
         <div className="container">
           <div className="ended-content">
             <h2>Partie terminée</h2>
@@ -237,7 +233,6 @@ function LobbyContent() {
             </Button>
           </div>
         </div>
-        <Footer />
 
         <style jsx>{`
           .ended-page {
@@ -272,8 +267,6 @@ function LobbyContent() {
 
   return (
     <div className="lobby-page">
-      <Header />
-
       <section className="lobby section">
         <div className="container">
           <div className="lobby-header">
@@ -308,8 +301,6 @@ function LobbyContent() {
           </div>
         </div>
       </section>
-
-      <Footer />
 
       {showLoginModal && (
         <LoginModal onClose={() => setShowLoginModal(false)} />
@@ -382,24 +373,21 @@ function LobbyContent() {
 
 export default function LobbyPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const roomId = searchParams.get('room');
 
   if (!roomId) {
     return (
       <div className="error-page">
-        <Header />
         <div className="container">
           <div className="error-content">
             <h2>Lien invalide</h2>
             <p>Aucun ID de room spécifié dans le lien.</p>
             <Button onClick={() => router.push('/hub')}>
-              {' '}
-              {/* CORRECTION : Utiliser router.push */}
               Retour aux missions
             </Button>
           </div>
         </div>
-        <Footer />
 
         <style jsx>{`
           .error-page {

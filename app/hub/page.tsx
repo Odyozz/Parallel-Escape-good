@@ -29,7 +29,7 @@ const HubPage = () => {
           id: 'cryostation9',
           title: 'CryoStation 9',
           shortDescription: 'Le vaisseau dérive vers une planète inconnue.',
-          image: '/images/missions/cryostation.jpg',
+          image: '/images/missions/cryostation.png', // <- .png
           status: 'available',
           duration: '30 min',
           players: '2-4',
@@ -40,7 +40,7 @@ const HubPage = () => {
           title: 'Temple des Échos',
           shortDescription:
             'Explorez une jungle perdue où les voix du passé guident votre chemin.',
-          image: '/images/missions/temple.jpg',
+          image: '/images/missions/temple.png', // <- .png
           status: 'coming-soon',
           duration: '45 min',
           players: '3-5',
@@ -50,8 +50,8 @@ const HubPage = () => {
           id: 'veiled-citadel',
           title: 'Citadelle Voilée',
           shortDescription:
-            'Décryptez les secrets d&apos;une forteresse oubliée dans les brumes du temps.',
-          image: '/images/missions/citadel.jpg',
+            "Décryptez les secrets d'une forteresse oubliée dans les brumes du temps.",
+          image: '/images/missions/citadel.png', // <- .png
           status: 'coming-soon',
           duration: '40 min',
           players: '2-4',

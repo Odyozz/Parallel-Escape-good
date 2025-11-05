@@ -29,7 +29,7 @@ interface Mission {
 
 const MissionDetailPage = () => {
   const params = useParams();
-  const { id } = params;
+  const { id } = params as { id?: string };
   const { user } = useAuth();
   const router = useRouter();
   const [mission, setMission] = useState<Mission | null>(null);
@@ -55,18 +55,18 @@ const MissionDetailPage = () => {
           description:
             'Le vaisseau dérive vers une planète inconnue. Réveillez votre équipe, restaurez les systèmes, évitez le crash.',
           longDescription:
-            'Vous vous réveillez de votre cryosommeil pour découvrir que le vaisseau est en état d&apos;alerte critique. Les systèmes de navigation sont hors ligne, les communications avec la Terre sont coupées, et vous dérivez rapidement vers une planète inconnue et potentiellement hostile. Avec votre équipe, vous devez explorer le vaisseau, résoudre des énigmes complexes et réparer les systèmes essentiels avant qu&apos;il ne soit trop tard.',
-          image: '/images/missions/cryostation.jpg',
+            "Vous vous réveillez de votre cryosommeil pour découvrir que le vaisseau est en état d'alerte critique. Les systèmes de navigation sont hors ligne, les communications avec la Terre sont coupées, et vous dérivez rapidement vers une planète inconnue et potentiellement hostile. Avec votre équipe, vous devez explorer le vaisseau, résoudre des énigmes complexes et réparer les systèmes essentiels avant qu'il ne soit trop tard.",
+          image: '/images/missions/cryostation.png', // <- .png
           status: 'available',
           duration: '~30 min',
-          players: '2 à 4',
+          players: '3 joueurs',
           difficulty: 'Moyenne',
           rooms: [
             { name: 'Énergie', icon: '🧊' },
             { name: 'Système', icon: '⚙️' },
             { name: 'Navigation', icon: '🚀' },
           ],
-          quote: 'Ce qui s&apos;ouvre… se souvient.',
+          quote: "Ce qui s'ouvre… se souvient.",
           note: '(Bientôt jouable en ligne — version démo en préparation)',
         },
         'temple-echoes': {
@@ -76,8 +76,8 @@ const MissionDetailPage = () => {
           description:
             'Explorez une jungle perdue où les voix du passé guident votre chemin.',
           longDescription:
-            'Au cœur d&apos;une jungle luxuriante et mystérieuse se trouve un temple ancien, abandonné depuis des siècles. Des légendes locales parlent d&apos;un artefact puissant caché dans ses profondeurs, capable de manipuler le temps lui-même. En tant qu&apos;archéologues d&apos;élite, votre équipe a été mandatée pour retrouver cet artefact, mais le temple est rempli de pièges mortels et d&apos;énigmes qui défient la logique.',
-          image: '/images/missions/temple.jpg',
+            "Au cœur d'une jungle luxuriante et mystérieuse se trouve un temple ancien, abandonné depuis des siècles. Des légendes locales parlent d'un artefact puissant caché dans ses profondeurs, capable de manipuler le temps lui-même. En tant qu'archéologues d'élite, votre équipe a été mandatée pour retrouver cet artefact, mais le temple est rempli de pièges mortels et d'énigmes qui défient la logique.",
+          image: '/images/missions/temple.png', // <- .png
           status: 'coming-soon',
           duration: '~45 min',
           players: '3 à 5',
@@ -95,10 +95,10 @@ const MissionDetailPage = () => {
           title: 'Citadelle Voilée',
           subtitle: 'Mission premium',
           description:
-            'Décryptez les secrets d&apos;une forteresse oubliée dans les brumes du temps.',
+            "Décryptez les secrets d'une forteresse oubliée dans les brumes du temps.",
           longDescription:
-            'Perdue dans les brumes épaisses d&apos;une vallée isolée se dresse la Citadelle Voilée, une forteresse médiévale qui a disparu de toutes les cartes il y a des siècles. Des rumeurs parlent de connaissances interdites et de technologies avancées cachées dans ses murs. En tant qu&apos;explorateurs intrépides, vous devez braver les dangers de la citadelle et percer ses mystères avant que les brumes ne vous engloutissent à jamais.',
-          image: '/images/missions/citadel.jpg',
+            "Perdue dans les brumes épaisses d'une vallée isolée se dresse la Citadelle Voilée, une forteresse médiévale qui a disparu de toutes les cartes il y a des siècles. Des rumeurs parlent de connaissances interdites et de technologies avancées cachées dans ses murs. En tant qu'explorateurs intrépides, vous devez braver les dangers de la citadelle et percer ses mystères avant que les brumes ne vous engloutissent à jamais.",
+          image: '/images/missions/citadel.png', // <- .png
           status: 'coming-soon',
           duration: '~40 min',
           players: '2 à 4',
@@ -139,26 +139,22 @@ const MissionDetailPage = () => {
     setCreatingRoom(true);
 
     try {
-      // On définit le nombre de joueurs requis pour CryoStation 9
-      const requiredPlayers = 1;
-      const roomId = await createRoom(user, mission.id, requiredPlayers); // On passe le nouveau paramètre
+      // Nombre de joueurs strict pour cette mission (design: 3)
+      const requiredPlayers = 3;
+      const roomId = await createRoom(user, mission.id, requiredPlayers);
       const inviteLink = `${window.location.origin}/play?room=${roomId}`;
 
-      // Copier le lien dans le presse-papiers
-      navigator.clipboard
-        .writeText(inviteLink)
-        .then(() => {
-          setToast({
-            message: "Lien d'invitation copié dans le presse-papiers !",
-            type: 'success',
-          });
-        })
-        .catch(() => {
-          setToast({
-            message: 'Impossible de copier le lien automatiquement.',
-            type: 'error',
-          });
+      await navigator.clipboard.writeText(inviteLink).catch(() => {
+        setToast({
+          message: 'Impossible de copier le lien automatiquement.',
+          type: 'error',
         });
+      });
+
+      setToast({
+        message: "Lien d'invitation copié dans le presse-papiers !",
+        type: 'success',
+      });
 
       // Rediriger vers le lobby
       router.push(`/play?room=${roomId}`);
