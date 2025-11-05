@@ -5,6 +5,30 @@ import { adminAuth, adminFirestore } from 'firebase-admin';
 import { CryoStation9Puzzles } from '@/app/docs/puzzles';
 import { LyraMessages } from './lyra-messages';
 
+// Util: compter les joueurs connectés depuis une map
+function countConnectedPlayers(players: Record<string, any> | undefined) {
+  if (!players) return 0;
+  return Object.values(players).filter((p: any) => p?.connected).length;
+}
+
+// Util: mapper un puzzleId -> moduleId ('energy' | 'system' | 'navigation')
+function moduleIdFromPuzzleId(puzzleId: string): 'energy' | 'system' | 'navigation' {
+  // convention: ACT{N}_{MODULE}_{...} avec MODULE ∈ ENERGY|SYSTEM|NAVIGATION
+  const parts = puzzleId.split('_'); // ["ACT1","ENERGY","..."]
+  const mod = (parts[1] || '').toLowerCase();
+  if (mod === 'energy') return 'energy';
+  if (mod === 'system') return 'system';
+  return 'navigation';
+}
+
+// Util: toMillis sécurisé (Timestamp Firestore ou Date/ISO)
+function safeToMillis(v: any): number | null {
+  if (!v) return null;
+  if (typeof v?.toMillis === 'function') return v.toMillis();
+  const t = new Date(v as any).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { idToken, roomId, kind, payload } = await request.json();
@@ -16,29 +40,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auth Firebase
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const uid = decodedToken.uid;
 
+    // Room
     const roomRef = adminFirestore.collection('rooms').doc(roomId);
     const roomDoc = await roomRef.get();
-
     if (!roomDoc.exists) {
       return NextResponse.json(
         { ok: false, error: 'Room not found' },
         { status: 404 }
       );
     }
+    const roomData: any = { id: roomDoc.id, ...roomDoc.data() };
 
-    const roomData = { id: roomDoc.id, ...roomDoc.data() };
-
-    const playerDoc = await roomRef.collection('players').doc(uid).get();
-    if (!playerDoc.exists) {
+    // Vérifier appartenance à la room via la MAP players (pas sous-collection)
+    const playerData = roomData.players?.[uid];
+    if (!playerData) {
       return NextResponse.json(
         { ok: false, error: 'Player not in room' },
         { status: 403 }
       );
     }
-    const playerData = playerDoc.data();
 
     if (roomData.status !== 'running') {
       return NextResponse.json(
@@ -47,12 +71,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const playersSnapshot = await roomRef
-      .collection('players')
-      .where('connected', '==', true)
-      .get();
-    const connectedPlayers = playersSnapshot.size;
-
+    // Nombre exact de joueurs connectés (depuis la MAP)
+    const connectedPlayers = countConnectedPlayers(roomData.players);
     if (connectedPlayers !== roomData.requiredPlayers) {
       return NextResponse.json(
         { ok: false, error: 'Incorrect number of players' },
@@ -60,14 +80,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await processIntent(
-      kind,
-      payload,
-      roomData,
-      uid,
-      playerData
-    );
+    // Dispatcher d'intentions
+    const result = await processIntent(kind, payload, roomData, uid, playerData);
 
+    // Journalisation
     await roomRef.collection('events').add({
       ts: adminFirestore.FieldValue.serverTimestamp(),
       actor: uid,
@@ -94,12 +110,14 @@ async function processIntent(
   playerData: any
 ) {
   const roomRef = adminFirestore.collection('rooms').doc(roomData.id);
-  const phase = roomData.phase;
+  const phase = roomData.phase as string;
   const modules = roomData.modules || {};
   const batch = adminFirestore.batch();
-  const roomUpdatePayload: any = {};
+  const roomUpdatePayload: Record<string, any> = {};
 
-  // --- CAS SPÉCIAL : Gestion manuelle de la synchronisation finale ---
+  // ─────────────────────────────────────────
+  // CAS SPÉCIAL : Synchronisation finale Acte 3
+  // ─────────────────────────────────────────
   if (kind === 'ACT3_FINAL_SYNC') {
     if (payload.action === 'start') {
       if (roomData.syncWindow?.isOpen) {
@@ -120,11 +138,14 @@ async function processIntent(
       if (!roomData.syncWindow?.isOpen) {
         return { ok: false, error: 'Sync window is not open' };
       }
-      if (roomData.syncWindow.startedAt.toMillis() + 3000 < Date.now()) {
+      const startedAtMs = safeToMillis(roomData.syncWindow.startedAt);
+      if (!startedAtMs || startedAtMs + 3000 < Date.now()) {
         return { ok: false, error: 'Sync window expired' };
       }
 
-      const syncedPlayers = roomData.syncWindow.syncedPlayers || [];
+      const syncedPlayers: string[] = Array.isArray(roomData.syncWindow.syncedPlayers)
+        ? [...roomData.syncWindow.syncedPlayers]
+        : [];
       if (syncedPlayers.includes(uid)) {
         return { ok: false, error: 'Player already synced' };
       }
@@ -132,16 +153,12 @@ async function processIntent(
       roomUpdatePayload['syncWindow.syncedPlayers'] = syncedPlayers;
 
       if (syncedPlayers.length === roomData.requiredPlayers) {
-        // Succès ! On applique les effets du puzzle
-        const puzzleDef = CryoStation9Puzzles.ACT3_FINAL_SYNC;
-        for (const effect of puzzleDef.effects) {
-          await applyEffect(
-            effect,
-            roomRef,
-            roomData,
-            batch,
-            roomUpdatePayload
-          );
+        // Succès : appliquer les effets du puzzle final
+        const puzzleDef = (CryoStation9Puzzles as any)['ACT3_FINAL_SYNC'];
+        if (puzzleDef?.effects) {
+          for (const effect of puzzleDef.effects) {
+            await applyEffect(effect, roomRef, roomData, batch, roomUpdatePayload);
+          }
         }
         roomUpdatePayload.syncWindow = { isOpen: false };
       }
@@ -157,75 +174,79 @@ async function processIntent(
     }
   }
 
-  // --- LOGIQUE STANDARD POUR LES AUTRES PUZZLES ---
-  const puzzleDef = CryoStation9Puzzles[kind];
+  // ─────────────────────────────────────────
+  // LOGIQUE STANDARD PUZZLES
+  // ─────────────────────────────────────────
+  const puzzleDef = (CryoStation9Puzzles as any)[kind];
   if (!puzzleDef) {
     if (kind === 'ADVANCE_PHASE') {
-      if (roomData.hostUid !== uid)
+      if (roomData.hostUid !== uid) {
         return { ok: false, error: 'Only host can advance phase' };
+      }
       return await advancePhase(roomRef, payload.phase);
     }
     return { ok: false, error: 'Unknown intent kind' };
   }
 
+  // Phase guard (ex: kind 'ACT1_...' autorisé en 'act1')
   const inferredPhase = kind.split('_')[0].toLowerCase().replace('act', '');
   if (inferredPhase !== phase.replace('act', '')) {
     return { ok: false, error: 'Puzzle not available in current phase' };
   }
 
-  if (playerData.currentRoom !== puzzleDef.moduleId) {
+  // Salle / module guard
+  const moduleId: 'energy' | 'system' | 'navigation' =
+    (puzzleDef.moduleId as any) || moduleIdFromPuzzleId(puzzleDef.id);
+  if (playerData.currentRoom !== moduleId) {
     return { ok: false, error: 'Action not allowed in this room' };
   }
 
-  const module = modules[puzzleDef.moduleId] || {};
-  if (module.status === 'offline' && puzzleDef.id !== 'ACT1_ENERGY_CIRCUITS') {
-    return { ok: false, error: 'Module offline' };
-  }
+  // Module & puzzle state (OBJETS, pas tableaux)
+  const moduleState = modules[moduleId] || {};
+  const puzzlesObj = moduleState.puzzles || {};
+  const puzzleId = puzzleDef.id;
 
-  const puzzleState = module.puzzles?.find(
-    (p: any) => p.id === puzzleDef.id
-  ) || {
-    id: puzzleDef.id,
-    state: 'locked',
-    data: {},
-  };
+  const currentPuzzleState =
+    puzzlesObj[puzzleId] || { id: puzzleId, state: 'locked', data: {} };
 
-  if (puzzleState.state === 'solved') {
+  if (currentPuzzleState.state === 'solved') {
     return { ok: true, effects: [] };
   }
 
   const gameState = { ...roomData, modules };
-  const isSuccess = puzzleDef.successCondition(payload, gameState);
+  const isSuccess = typeof puzzleDef.successCondition === 'function'
+    ? puzzleDef.successCondition(payload, gameState)
+    : false;
 
   const effects: any[] = [];
 
   if (isSuccess) {
-    puzzleState.state = 'solved';
-    puzzleState.data = { ...puzzleState.data, ...payload };
-    for (const effect of puzzleDef.effects) {
-      effects.push(
-        await applyEffect(effect, roomRef, roomData, batch, roomUpdatePayload)
-      );
+    // Succès
+    roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.state`] = 'solved';
+    roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.data`] = {
+      ...(currentPuzzleState.data || {}),
+      ...payload,
+    };
+
+    if (Array.isArray(puzzleDef.effects)) {
+      for (const effect of puzzleDef.effects) {
+        const res = await applyEffect(effect, roomRef, roomData, batch, roomUpdatePayload);
+        if (res) effects.push(res);
+      }
     }
   } else {
-    puzzleState.state = 'solving';
-    puzzleState.data = { ...puzzleState.data, ...payload };
+    // En cours
+    roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.state`] = 'solving';
+    roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.data`] = {
+      ...(currentPuzzleState.data || {}),
+      ...payload,
+    };
+
     const errorMessage = getLyraErrorMessage(puzzleDef.id, phase);
     if (errorMessage) {
       effects.push({ type: 'emitLyraMessage', message: errorMessage });
     }
   }
-
-  const updatedPuzzles = [...(module.puzzles || [])];
-  const puzzleIndex = updatedPuzzles.findIndex(
-    (p: any) => p.id === puzzleDef.id
-  );
-  if (puzzleIndex >= 0) {
-    updatedPuzzles[puzzleIndex] = puzzleState;
-  } else {
-    updatedPuzzles.push(puzzleState);
-  }
-  roomUpdatePayload[`modules.${puzzleDef.moduleId}.puzzles`] = updatedPuzzles;
 
   if (Object.keys(roomUpdatePayload).length > 0) {
     batch.update(roomRef, roomUpdatePayload);
@@ -240,42 +261,50 @@ async function applyEffect(
   roomRef: any,
   roomData: any,
   batch: any,
-  roomUpdatePayload: any
+  roomUpdatePayload: Record<string, any>
 ) {
   const { type, payload } = effect;
+
   switch (type) {
-    case 'SET_MODULE_STATUS':
+    case 'SET_MODULE_STATUS': {
+      // payload: { moduleId: 'energy'|'system'|'navigation', status: 'offline'|'unstable'|'stabilized' }
       roomUpdatePayload[`modules.${payload.moduleId}.status`] = payload.status;
       return { type, payload };
-    case 'ADVANCE_PHASE':
+    }
+
+    case 'ADVANCE_PHASE': {
+      // payload: { phase: 'act2'|'act3'|'epilogue' }
       roomUpdatePayload.phase = payload.phase;
       return { type, payload: { phase: payload.phase } };
-    case 'SET_GAUGE':
+    }
+
+    case 'SET_GAUGE': {
+      // payload: { target: 'energy'|'structure'|'stability', value: number }
       roomUpdatePayload[`gauges.${payload.target}`] = payload.value;
       return { type, payload };
-    case 'EMIT_LYRA_MESSAGE':
-      return {
-        type,
-        message: payload.key ? LyraMessages[payload.key] : 'Message inconnu',
-      };
-    case 'UNLOCK_PUZZLE':
-      const [moduleId] = payload.puzzleId.toLowerCase().split('_');
-      const moduleToUnlock = roomData.modules[moduleId];
-      if (moduleToUnlock?.puzzles) {
-        const puzzleToUnlock = moduleToUnlock.puzzles.find(
-          (p: any) => p.id === payload.puzzleId
-        );
-        if (puzzleToUnlock) {
-          const puzzleIndex = moduleToUnlock.puzzles.indexOf(puzzleToUnlock);
-          roomUpdatePayload[
-            `modules.${moduleId}.puzzles.${puzzleIndex}.state`
-          ] = 'solving';
-        }
-      }
-      return { type, payload };
-    default:
+    }
+
+    case 'EMIT_LYRA_MESSAGE': {
+      // payload: { key?: string, message?: string }
+      const message =
+        payload?.message ??
+        (payload?.key ? (LyraMessages as any)[payload.key] : undefined) ??
+        'Message inconnu';
+      return { type: 'emitLyraMessage', message };
+    }
+
+    case 'UNLOCK_PUZZLE': {
+      // payload: { puzzleId: 'ACT2_SYSTEM_CALIBRATION' } ; on écrit state='solving' dans l'OBJET puzzles
+      const targetPuzzleId: string = payload.puzzleId;
+      const moduleId = payload.moduleId || moduleIdFromPuzzleId(targetPuzzleId);
+      roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.state`] = 'solving';
+      return { type, payload: { puzzleId: targetPuzzleId, moduleId } };
+    }
+
+    default: {
       console.warn('Unknown effect type:', type);
       return { type: 'unknown', effect };
+    }
   }
 }
 

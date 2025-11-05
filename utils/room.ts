@@ -23,7 +23,6 @@ export interface Player {
   currentRoom: 'energy' | 'system' | 'navigation';
 }
 
-// --- MODIFICATION : Ajout des propriétés `modules` et `syncWindow` ---
 export interface Room {
   id: string;
   scenarioId: string;
@@ -36,10 +35,9 @@ export interface Room {
   timer: { endsAt: any; paused: boolean };
   gauges: { energy: number; structure: number; stability: number };
   players: Record<string, Player>;
-  // Propriétés ajoutées pour la logique de jeu
-  modules: Record<string, any>; // Contiendra l'état des modules et des puzzles
+  // ⚠️ modules peut être absent ou null au moment de la création.
+  modules?: Record<string, any> | null;
   syncWindow?: {
-    // La fenêtre de sync est optionnelle, elle n'existe pas toujours
     isOpen: boolean;
     startedBy?: string;
     startedAt?: any; // Firestore Timestamp
@@ -47,10 +45,24 @@ export interface Room {
   };
 }
 
-// --- SUGGESTION : Pour une meilleure organisation, vous pouvez ré-exporter le type User ---
-// export type { User } from 'firebase/auth';
-// Ainsi, dans GameContext, vous pourriez faire : import { User, Room, Player } from '../utils/room';
+// ───────────────────────────────
+// Helpers
+// ───────────────────────────────
+const generateRoomId = (): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
 
+const countPlayers = (players: Record<string, Player> | undefined) =>
+  players ? Object.keys(players).length : 0;
+
+// ───────────────────────────────
+// Room lifecycle
+// ───────────────────────────────
 export const createRoom = async (
   user: User,
   scenarioId: string,
@@ -79,11 +91,9 @@ export const createRoom = async (
     phase: 'intro',
     timer: { endsAt: null, paused: false },
     gauges: { energy: 100, structure: 100, stability: 100 },
-    players: {
-      [user.uid]: playerData,
-    },
-    // Initialisation des nouvelles propriétés
-    modules: {},
+    players: { [user.uid]: playerData },
+    // 🔑 IMPORTANT : laisser modules null (ou omis) pour que GameContext déclenche l'initialisation.
+    modules: null,
     syncWindow: { isOpen: false },
   };
 
@@ -97,20 +107,18 @@ export const joinRoom = async (
 ): Promise<boolean> => {
   const roomRef = doc(db, 'rooms', roomId);
   const roomSnap = await getDoc(roomRef);
-
-  if (!roomSnap.exists()) {
-    return false;
-  }
+  if (!roomSnap.exists()) return false;
 
   const room = roomSnap.data() as Room;
 
-  if (
-    room.status === 'running' &&
-    Object.keys(room.players).length >= room.requiredPlayers
-  ) {
-    return false;
-  }
+  // Interdit de rejoindre une partie déjà en cours
+  if (room.status === 'running') return false;
 
+  // Capacité stricte : ne pas dépasser requiredPlayers
+  const currentCount = countPlayers(room.players);
+  if (currentCount >= room.requiredPlayers) return false;
+
+  // Si déjà présent, simplement réactiver la présence
   if (room.players[user.uid]) {
     await updateDoc(roomRef, {
       [`players.${user.uid}.connected`]: true,
@@ -143,14 +151,11 @@ export const leaveRoom = async (
 ): Promise<void> => {
   const roomRef = doc(db, 'rooms', roomId);
   const roomSnap = await getDoc(roomRef);
-
-  if (!roomSnap.exists()) {
-    return;
-  }
+  if (!roomSnap.exists()) return;
 
   const room = roomSnap.data() as Room;
 
-  if (room.hostUid === userId && Object.keys(room.players).length > 1) {
+  if (room.hostUid === userId && countPlayers(room.players) > 1) {
     const remainingPlayers = Object.keys(room.players).filter(
       (uid) => uid !== userId
     );
@@ -199,7 +204,7 @@ export const startGameFromLobby = async (roomId: string): Promise<void> => {
     status: 'running',
     phase: 'intro',
     timer: {
-      endsAt: endsAt,
+      endsAt,
       paused: false,
     },
     gauges: {
@@ -207,6 +212,7 @@ export const startGameFromLobby = async (roomId: string): Promise<void> => {
       structure: 50,
       stability: 50,
     },
+    // on laisse modules tel quel (null) : il sera initialisé par GameContext au premier rendu
   });
 };
 
@@ -215,9 +221,9 @@ export const subscribeToRoom = (
   callback: (room: Room | null) => void
 ) => {
   const roomRef = doc(db, 'rooms', roomId);
-  return onSnapshot(roomRef, (doc) => {
-    if (doc.exists()) {
-      callback({ id: doc.id, ...doc.data() } as Room);
+  return onSnapshot(roomRef, (snap) => {
+    if (snap.exists()) {
+      callback({ id: snap.id, ...snap.data() } as Room);
     } else {
       callback(null);
     }
@@ -235,8 +241,9 @@ export const updatePlayerPresence = async (
   });
 };
 
-// --- NOUVELLES FONCTIONS POUR LE JEU ---
-
+// ───────────────────────────────
+// Game helpers
+// ───────────────────────────────
 export const changePlayerRoom = async (
   roomId: string,
   playerId: string,
@@ -271,17 +278,6 @@ export const updateGauges = async (
 ): Promise<void> => {
   const roomRef = doc(db, 'rooms', roomId);
   await updateDoc(roomRef, { gauges });
-};
-
-// --- FIN DES NOUVELLES FONCTIONS ---
-
-const generateRoomId = (): string => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
 };
 
 export const updateModulesInFirestore = async (

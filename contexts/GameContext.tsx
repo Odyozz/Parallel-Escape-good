@@ -1,5 +1,4 @@
 // contexts/GameContext.tsx
-
 'use client';
 
 import {
@@ -18,12 +17,11 @@ import {
   updateModulesInFirestore,
 } from '../utils/room';
 import { useRouter } from 'next/navigation';
-import { User } from 'firebase/auth';
-import { Room, Player } from '../utils/room';
 import { useAuth } from './AuthContext';
-import { initializeModules } from '../app/docs/puzzles'; // Import de la fonction d'initialisation
+import { Room, Player } from '../utils/room';
+import { initializeModules } from '../app/docs/puzzles'; // init déclarative des puzzles
 
-// --- Mise à jour de l'interface du contexte ---
+// --- Interface du contexte ---
 interface GameContextType {
   currentRoom: 'energy' | 'system' | 'navigation';
   changeRoom: (direction: 'left' | 'right') => void;
@@ -59,7 +57,7 @@ interface GameProviderProps {
   children: ReactNode;
 }
 
-const rooms: Player['currentRoom'][] = ['energy', 'system', 'navigation'];
+const roomsOrder: Player['currentRoom'][] = ['energy', 'system', 'navigation'];
 
 export const GameProvider = ({ children }: GameProviderProps) => {
   const { room, currentPlayer, isHost } = useRoom();
@@ -71,53 +69,65 @@ export const GameProvider = ({ children }: GameProviderProps) => {
   const [modules, setModules] = useState<Room['modules'] | null>(null);
   const [syncWindow, setSyncWindow] = useState<Room['syncWindow'] | null>(null);
 
-  // --- Authentification ---
+  // --- Auth ---
   const { user } = useAuth();
 
   const currentRoom = currentPlayer?.currentRoom || 'energy';
   const isPaused = room?.timer.paused || false;
 
-  // --- AJOUT : Effet pour initialiser les modules au lancement de la partie ---
+  // --- Initialisation des modules au lancement ---
   useEffect(() => {
-    if (room && room.status === 'running' && !room.modules) {
+    if (!room || room.status !== 'running') return;
+
+    const isModulesEmpty =
+      !room.modules ||
+      (typeof room.modules === 'object' &&
+        room.modules !== null &&
+        Object.keys(room.modules).length === 0);
+
+    if (isModulesEmpty) {
       console.log('GameContext: Initializing modules for phase', room.phase);
       const initialModules = initializeModules(room.phase);
       updateModulesInFirestore(room.id, initialModules);
     }
-  }, [room]); // Se déclenche quand `room` change
+  }, [room?.id, room?.status, room?.phase, room?.modules]);
 
-  // --- AJOUT : Effet pour envoyer le premier message de LYRA au démarrage ---
+  // --- Premier message LYRA ---
   useEffect(() => {
-    if (room && room.status === 'running' && lyraMessages.length === 0) {
-      const initialMessage = {
-        intro:
-          'Bienvenue à bord. Réveil complet. Diagnostic en cours... Commencez par la section ÉNERGIE.',
-        act1: 'Énergie auxiliaire en ligne. Diagnostiquez les systèmes pour stabiliser le vaisseau.',
-        act2: 'Systèmes stabilisés. Attention, surchauffe du réacteur en cours.',
-        act3: 'Réacteur stabilisé. Préparez-vous à la correction de trajectoire.',
-        epilogue: 'Mission accomplie. Vous avez sauvé CryoStation 9.',
-      };
-      setLyraMessages([initialMessage[room.phase] || '']);
-    }
-  }, [room, lyraMessages.length]); // Se déclenche quand `room` change ou que les messages sont vidés
+    if (!room || room.status !== 'running' || lyraMessages.length > 0) return;
 
-  // --- Stabilisation du useCallback ---
+    const initialMessage: Record<Room['phase'], string> = {
+      intro:
+        'Bienvenue à bord. Réveil complet. Diagnostic en cours... Commencez par la section ÉNERGIE.',
+      act1:
+        'Énergie auxiliaire en ligne. Diagnostiquez les systèmes pour stabiliser le vaisseau.',
+      act2:
+        'Systèmes stabilisés. Attention, surchauffe du réacteur en cours.',
+      act3:
+        'Réacteur stabilisé. Préparez-vous à la correction de trajectoire.',
+      epilogue: 'Mission accomplie. Vous avez sauvé CryoStation 9.',
+    };
+
+    setLyraMessages([initialMessage[room.phase] || '']);
+  }, [room?.id, room?.status, room?.phase, lyraMessages.length]);
+
+  // --- Envoi d’intentions vers l’API ---
   const sendIntent = useCallback(
     async (kind: string, payload: any) => {
       if (!user || !room)
         return { ok: false, errors: ['User or room not available'] };
 
       const idToken = await user.getIdToken();
-      const response = await fetch('/api/event', {
+      const res = await fetch('/api/event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, roomId: room.id, kind, payload }),
       });
-      const result = await response.json();
+      const result = await res.json();
 
       if (result.ok && result.effects) {
         result.effects.forEach((effect: any) => {
-          if (effect.type === 'emitLyraMessage') {
+          if (effect.type === 'emitLyraMessage' && effect.message) {
             setLyraMessages((prev) => [...prev.slice(-4), effect.message]);
           }
         });
@@ -125,30 +135,45 @@ export const GameProvider = ({ children }: GameProviderProps) => {
 
       return result;
     },
-    [user?.uid, room?.id] // Dépendances stables
+    [user?.uid, room?.id]
   );
 
-  // --- Effet pour synchroniser les états ---
+  // --- Sync des états room -> local ---
   useEffect(() => {
     if (!room) return;
     setModules(room.modules || null);
     setSyncWindow(room.syncWindow || null);
-  }, [room]);
+  }, [room?.id, room?.modules, room?.syncWindow]);
 
-  // --- Logique du timer ---
+  // --- Timer global (support Timestamp OU Date) ---
   useEffect(() => {
     if (!room || room.status !== 'running' || isPaused) {
       setTimeLeft(0);
       return;
     }
 
+    const getEndsAtMs = () => {
+      const v = room.timer.endsAt;
+      if (!v) return undefined;
+      // Firestore Timestamp
+      // @ts-ignore
+      if (typeof v?.toMillis === 'function') return v.toMillis();
+      // Date ou string
+      const ms = new Date(v as any).getTime();
+      return Number.isFinite(ms) ? ms : undefined;
+    };
+
+    const endsAtMs = getEndsAtMs();
+    if (!endsAtMs) {
+      setTimeLeft(0);
+      return;
+    }
+
     const interval = setInterval(() => {
       const now = Date.now();
-      const endsAt = room.timer.endsAt.toMillis();
-      const difference = endsAt - now;
-
-      if (difference > 0) {
-        setTimeLeft(Math.floor(difference / 1000));
+      const diff = endsAtMs - now;
+      if (diff > 0) {
+        setTimeLeft(Math.floor(diff / 1000));
       } else {
         setTimeLeft(0);
         clearInterval(interval);
@@ -156,70 +181,55 @@ export const GameProvider = ({ children }: GameProviderProps) => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room, isPaused]);
+  }, [room?.id, room?.status, room?.timer?.endsAt, isPaused]);
 
-  // --- Logique de pause automatique ---
+  // --- Pause automatique selon présence / nombre exact ---
   useEffect(() => {
     if (!room || !isHost) return;
 
-    const allPlayersConnected = Object.values(room.players).every(
-      (p) => p.connected
-    );
-    const requiredPlayersConnected =
-      Object.values(room.players).filter((p) => p.connected).length ===
-      room.requiredPlayers;
+    const connected = Object.values(room.players || {}).filter(
+      (p) => p?.connected
+    ).length;
 
-    if (
-      room.status === 'running' &&
-      (!allPlayersConnected || !requiredPlayersConnected)
-    ) {
+    const shouldPause =
+      room.status === 'running' && connected !== room.requiredPlayers;
+
+    if (shouldPause && !room.timer.paused) {
       setTimerPaused(room.id, true);
-    } else if (
-      room.status === 'running' &&
-      isPaused &&
-      allPlayersConnected &&
-      requiredPlayersConnected
-    ) {
+    } else if (!shouldPause && room.timer.paused) {
       setTimerPaused(room.id, false);
     }
-  }, [room, isHost, isPaused]);
+  }, [room?.id, room?.status, room?.players, room?.requiredPlayers, room?.timer?.paused, isHost]);
 
+  // --- Navigation entre salles ---
   const changeRoom = (direction: 'left' | 'right') => {
     if (!currentPlayer || !room || isPaused) return;
 
-    const currentIndex = rooms.indexOf(currentRoom);
-    let nextIndex;
-    if (direction === 'left') {
-      nextIndex = (currentIndex - 1 + rooms.length) % rooms.length;
-    } else {
-      nextIndex = (currentIndex + 1) % rooms.length;
-    }
+    const currentIndex = roomsOrder.indexOf(currentRoom);
+    const nextIndex =
+      direction === 'left'
+        ? (currentIndex - 1 + roomsOrder.length) % roomsOrder.length
+        : (currentIndex + 1) % roomsOrder.length;
 
-    changePlayerRoom(room.id, currentPlayer.uid, rooms[nextIndex]);
+    changePlayerRoom(room.id, currentPlayer.uid, roomsOrder[nextIndex]);
   };
 
+  // --- Phase suivante (outil host) ---
   const forceNextPhase = () => {
     if (!isHost || !room) return;
-    const phases: Room['phase'][] = [
-      'intro',
-      'act1',
-      'act2',
-      'act3',
-      'epilogue',
-    ];
-    const currentIndex = phases.indexOf(room.phase);
-    const nextPhase = phases[currentIndex + 1];
-    if (nextPhase) {
-      setGamePhase(room.id, nextPhase);
-    }
+    const phases: Room['phase'][] = ['intro', 'act1', 'act2', 'act3', 'epilogue'];
+    const i = phases.indexOf(room.phase);
+    const next = phases[i + 1];
+    if (next) setGamePhase(room.id, next);
   };
 
+  // --- Reprendre (host) ---
   const resumeGame = () => {
     if (!isHost || !room) return;
     setTimerPaused(room.id, false);
   };
 
-  const value = {
+  const value: GameContextType = {
     currentRoom,
     changeRoom,
     forceNextPhase,
