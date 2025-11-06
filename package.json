@@ -9,13 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "encoding": "^0.1.13",
     "firebase": "^9.23.0",
+    "firebase-admin": "12.1.0",
     "next": "13.4.7",
     "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "firebase-admin": "12.1.0"
+    "react-dom": "18.2.0"
   },
   "devDependencies": {
+    "@types/body-parser": "^1.19.6",
     "@types/node": "20.3.1",
     "@types/react": "18.2.12",
     "@types/react-dom": "18.2.5",
