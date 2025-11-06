@@ -1,7 +1,7 @@
 // app/api/event/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminFirestore } from 'firebase-admin';
+import { adminAuth, adminFirestore } from '@/app/lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { CryoStation9Puzzles } from '@/app/docs/puzzles';
 import { LyraMessages } from './lyra-messages';
 
@@ -13,8 +13,7 @@ function countConnectedPlayers(players: Record<string, any> | undefined) {
 
 // Util: mapper un puzzleId -> moduleId ('energy' | 'system' | 'navigation')
 function moduleIdFromPuzzleId(puzzleId: string): 'energy' | 'system' | 'navigation' {
-  // convention: ACT{N}_{MODULE}_{...} avec MODULE ∈ ENERGY|SYSTEM|NAVIGATION
-  const parts = puzzleId.split('_'); // ["ACT1","ENERGY","..."]
+  const parts = puzzleId.split('_');
   const mod = (parts[1] || '').toLowerCase();
   if (mod === 'energy') return 'energy';
   if (mod === 'system') return 'system';
@@ -85,7 +84,7 @@ export async function POST(request: NextRequest) {
 
     // Journalisation
     await roomRef.collection('events').add({
-      ts: adminFirestore.FieldValue.serverTimestamp(),
+      ts: FieldValue.serverTimestamp(),
       actor: uid,
       kind,
       payload,
@@ -126,7 +125,7 @@ async function processIntent(
       roomUpdatePayload.syncWindow = {
         isOpen: true,
         startedBy: uid,
-        startedAt: adminFirestore.FieldValue.serverTimestamp(),
+        startedAt: FieldValue.serverTimestamp(),
         syncedPlayers: [],
       };
       batch.update(roomRef, roomUpdatePayload);
@@ -188,7 +187,7 @@ async function processIntent(
     return { ok: false, error: 'Unknown intent kind' };
   }
 
-  // Phase guard (ex: kind 'ACT1_...' autorisé en 'act1')
+  // Phase guard
   const inferredPhase = kind.split('_')[0].toLowerCase().replace('act', '');
   if (inferredPhase !== phase.replace('act', '')) {
     return { ok: false, error: 'Puzzle not available in current phase' };
@@ -201,7 +200,7 @@ async function processIntent(
     return { ok: false, error: 'Action not allowed in this room' };
   }
 
-  // Module & puzzle state (OBJETS, pas tableaux)
+  // Module & puzzle state (objets)
   const moduleState = modules[moduleId] || {};
   const puzzlesObj = moduleState.puzzles || {};
   const puzzleId = puzzleDef.id;
@@ -267,25 +266,21 @@ async function applyEffect(
 
   switch (type) {
     case 'SET_MODULE_STATUS': {
-      // payload: { moduleId: 'energy'|'system'|'navigation', status: 'offline'|'unstable'|'stabilized' }
       roomUpdatePayload[`modules.${payload.moduleId}.status`] = payload.status;
       return { type, payload };
     }
 
     case 'ADVANCE_PHASE': {
-      // payload: { phase: 'act2'|'act3'|'epilogue' }
       roomUpdatePayload.phase = payload.phase;
       return { type, payload: { phase: payload.phase } };
     }
 
     case 'SET_GAUGE': {
-      // payload: { target: 'energy'|'structure'|'stability', value: number }
       roomUpdatePayload[`gauges.${payload.target}`] = payload.value;
       return { type, payload };
     }
 
     case 'EMIT_LYRA_MESSAGE': {
-      // payload: { key?: string, message?: string }
       const message =
         payload?.message ??
         (payload?.key ? (LyraMessages as any)[payload.key] : undefined) ??
@@ -294,7 +289,6 @@ async function applyEffect(
     }
 
     case 'UNLOCK_PUZZLE': {
-      // payload: { puzzleId: 'ACT2_SYSTEM_CALIBRATION' } ; on écrit state='solving' dans l'OBJET puzzles
       const targetPuzzleId: string = payload.puzzleId;
       const moduleId = payload.moduleId || moduleIdFromPuzzleId(targetPuzzleId);
       roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.state`] = 'solving';
@@ -315,13 +309,9 @@ async function advancePhase(roomRef: any, newPhase: string) {
 
 function getLyraErrorMessage(puzzleId: string, phase: string): string | null {
   const errorMessages: { [key: string]: { [key: string]: string } } = {
-    ACT1_ENERGY_CIRCUITS: {
-      act1: "Surtension détectée. Risque d'incendie accru.",
-    },
+    ACT1_ENERGY_CIRCUITS: { act1: "Surtension détectée. Risque d'incendie accru." },
     ACT1_ENERGY_CODE_B7: { act1: 'Code incorrect. Vérifiez les logs système.' },
-    ACT2_SYSTEM_CALIBRATION: {
-      act2: 'Erreur de phase. Les flux ne sont pas alignés.',
-    },
+    ACT2_SYSTEM_CALIBRATION: { act2: 'Erreur de phase. Les flux ne sont pas alignés.' },
     ACT2_NAVIGATION_DIALS: { act2: 'Dérive détectée. Ajustez les cadrans.' },
     ACT3_SYSTEM_TRAJECTORY: { act3: 'Calcul incorrect. Consultez les logs.' },
     ACT3_NAVIGATION_COORDS: { act3: 'Coordonnées invalides.' },
