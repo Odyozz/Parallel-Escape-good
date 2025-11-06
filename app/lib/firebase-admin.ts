@@ -1,16 +1,27 @@
 // app/lib/firebase-admin.ts
-import * as admin from 'firebase-admin';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+// Récupération/normalisation de la clé privée
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+let privateKey = process.env.FIREBASE_PRIVATE_KEY || '';
+
+// Enlève d'éventuels guillemets globaux et remet de vrais retours à la ligne
+privateKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
+
+// Initialise l'app Admin une seule fois
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
+      projectId,
+      clientEmail,
+      privateKey,
     }),
   });
 }
 
-// ✅ Exporte tes services admin
-export const adminAuth = admin.auth();
-export const adminFirestore = admin.firestore();
+// Exports à utiliser côté serveur
+export const adminAuth = getAuth();
+export const adminFirestore = getFirestore();
