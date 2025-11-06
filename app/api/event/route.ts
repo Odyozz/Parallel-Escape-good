@@ -20,12 +20,40 @@ function moduleIdFromPuzzleId(puzzleId: string): 'energy' | 'system' | 'navigati
   return 'navigation';
 }
 
-// Util: toMillis sécurisé (Timestamp Firestore ou Date/ISO)
+// Raccourci: récupérer la définition d’un puzzle du catalogue
+function getPuzzleDef(puzzleId: string): any | null {
+  return (CryoStation9Puzzles as any)?.[puzzleId] ?? null;
+}
+
+// Sécu: toMillis (Timestamp Firestore ou Date/ISO)
 function safeToMillis(v: any): number | null {
   if (!v) return null;
   if (typeof v?.toMillis === 'function') return v.toMillis();
   const t = new Date(v as any).getTime();
   return Number.isFinite(t) ? t : null;
+}
+
+// Initialise l’objet puzzle (id, type, data) dans roomUpdatePayload si absent côté DB
+function ensurePuzzleInit(
+  roomData: any,
+  roomUpdatePayload: Record<string, any>,
+  puzzleId: string
+) {
+  const moduleId = moduleIdFromPuzzleId(puzzleId);
+  const pathBase = `modules.${moduleId}.puzzles.${puzzleId}`;
+  const alreadyExists =
+    roomData?.modules?.[moduleId]?.puzzles &&
+    Object.prototype.hasOwnProperty.call(roomData.modules[moduleId].puzzles, puzzleId);
+
+  if (!alreadyExists) {
+    const def = getPuzzleDef(puzzleId);
+    roomUpdatePayload[`${pathBase}.id`] = puzzleId;
+    roomUpdatePayload[`${pathBase}.type`] = def?.type ?? 'unknown';
+    // Ne pas écraser un éventuel data existant posé plus haut
+    if (roomUpdatePayload[`${pathBase}.data`] === undefined) {
+      roomUpdatePayload[`${pathBase}.data`] = {};
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -213,14 +241,16 @@ async function processIntent(
   }
 
   const gameState = { ...roomData, modules };
-  const isSuccess = typeof puzzleDef.successCondition === 'function'
-    ? puzzleDef.successCondition(payload, gameState)
-    : false;
+  const isSuccess =
+    typeof puzzleDef.successCondition === 'function'
+      ? puzzleDef.successCondition(payload, gameState)
+      : false;
 
   const effects: any[] = [];
 
   if (isSuccess) {
     // Succès
+    ensurePuzzleInit(roomData, roomUpdatePayload, puzzleId);
     roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.state`] = 'solved';
     roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.data`] = {
       ...(currentPuzzleState.data || {}),
@@ -235,6 +265,7 @@ async function processIntent(
     }
   } else {
     // En cours
+    ensurePuzzleInit(roomData, roomUpdatePayload, puzzleId);
     roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.state`] = 'solving';
     roomUpdatePayload[`modules.${moduleId}.puzzles.${puzzleId}.data`] = {
       ...(currentPuzzleState.data || {}),
@@ -276,6 +307,17 @@ async function applyEffect(
     }
 
     case 'SET_GAUGE': {
+      // Supporte à la fois {target, value} et l'objet complet { energy, structure, stability }
+      if (payload && typeof payload === 'object' && !('target' in payload)) {
+        const keys = ['energy', 'structure', 'stability'] as const;
+        for (const k of keys) {
+          if (payload[k] !== undefined) {
+            roomUpdatePayload[`gauges.${k}`] = payload[k];
+          }
+        }
+        return { type, payload };
+      }
+      // Ancien format
       roomUpdatePayload[`gauges.${payload.target}`] = payload.value;
       return { type, payload };
     }
@@ -291,12 +333,40 @@ async function applyEffect(
     case 'UNLOCK_PUZZLE': {
       const targetPuzzleId: string = payload.puzzleId;
       const moduleId = payload.moduleId || moduleIdFromPuzzleId(targetPuzzleId);
+      // Pré-initialiser l’objet puzzle si nécessaire
+      ensurePuzzleInit(roomData, roomUpdatePayload, targetPuzzleId);
       roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.state`] = 'solving';
+      // S’assurer d’un data présent
+      if (roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.data`] === undefined) {
+        roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.data`] = {};
+      }
       return { type, payload: { puzzleId: targetPuzzleId, moduleId } };
     }
 
+    case 'SET_PUZZLE_STATE': {
+      const targetPuzzleId: string = payload.puzzleId;
+      const moduleId = payload.moduleId || moduleIdFromPuzzleId(targetPuzzleId);
+      ensurePuzzleInit(roomData, roomUpdatePayload, targetPuzzleId);
+      roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.state`] = payload.state;
+      if (payload.data) {
+        roomUpdatePayload[`modules.${moduleId}.puzzles.${targetPuzzleId}.data`] = payload.data;
+      }
+      return { type, payload: { puzzleId: targetPuzzleId, state: payload.state } };
+    }
+
+    case 'OPEN_SYNC_WINDOW': {
+      // Ouvre la fenêtre de synchro (utilisé après ACT3_NAVIGATION_COORDS)
+      roomUpdatePayload.syncWindow = {
+        isOpen: true,
+        startedBy: roomData.hostUid ?? 'system',
+        startedAt: FieldValue.serverTimestamp(),
+        syncedPlayers: [],
+      };
+      return { type: 'OPEN_SYNC_WINDOW' };
+    }
+
     default: {
-      console.warn('Unknown effect type:', type);
+      console.warn('Unknown effect type:', type, payload);
       return { type: 'unknown', effect };
     }
   }

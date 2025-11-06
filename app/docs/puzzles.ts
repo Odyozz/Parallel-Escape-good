@@ -434,19 +434,19 @@ export const initializeModules = (
     modules.energy.puzzles.ACT1_ENERGY_CIRCUITS = {
       id: 'ACT1_ENERGY_CIRCUITS',
       type: 'circuit_connect',
-      state: 'locked',
+      state: 'solving',
       data: {},
     };
     modules.energy.puzzles.ACT1_ENERGY_CODE_B7 = {
       id: 'ACT1_ENERGY_CODE_B7',
       type: 'code_entry',
-      state: 'locked',
+      state: 'solving',
       data: {},
     };
     modules.system.puzzles.ACT1_SYSTEM_LOG_B7 = {
       id: 'ACT1_SYSTEM_LOG_B7',
       type: 'log_reading',
-      state: 'locked',
+      state: 'solving',
       data: {},
     };
   }
