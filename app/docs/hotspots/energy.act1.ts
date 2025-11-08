@@ -1,0 +1,45 @@
+import { Hotspot } from '../models';
+
+export const EnergyAct1Hotspots: Hotspot[] = [
+  {
+    id: 'reactor_panel',
+    roomId: 'energy',
+    x: 0.42,
+    y: 0.58,
+    type: 'puzzle',
+    title: 'Panneau du réacteur',
+    moduleId: 'numeric_pad',
+    visible: true,
+    phaseGate: ['act1'],
+  },
+  {
+    id: 'log_terminal',
+    roomId: 'energy',
+    x: 0.22,
+    y: 0.64,
+    type: 'clue',
+    title: 'Terminal de logs',
+    moduleId: 'log_viewer',
+    visible: true,
+    phaseGate: ['act1'],
+  },
+  {
+    id: 'broken_cable',
+    roomId: 'energy',
+    x: 0.77,
+    y: 0.73,
+    type: 'lure',
+    title: 'Câble sectionné',
+    visible: true,
+    phaseGate: ['act1'],
+  },
+  {
+    id: 'maintenance_door',
+    roomId: 'energy',
+    x: 0.1,
+    y: 0.4,
+    type: 'lore',
+    title: 'Porte maintenance',
+    visible: true,
+  },
+];

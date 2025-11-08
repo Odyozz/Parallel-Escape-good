@@ -1,112 +1,26 @@
 // components/game/GameView.tsx
-
 'use client';
 
-import { useGame } from '../../contexts/GameContext';
-import { useRoom } from '../../contexts/RoomContext';
-import LyraPanel from './LyraPanel';
+import React from 'react';
+import RoomScene from '@/app/game/RoomScene';
+import LyraBar from '@/app/game/LyraBar';
+import type { ModuleInstance } from '@/app/docs/models';
 
-// --- Importer les composants de salle réels ---
-import { EnergyRoom } from './rooms/EnergyRoom';
-import { SystemRoom } from './rooms/SystemRoom';
-import { NavigationRoom } from './rooms/NavigationRoom';
+const EnergyAct1Hotspots = [
+  { id: 'reactor_panel', roomId: 'energy', x: 0.42, y: 0.58, type: 'puzzle', title: 'Panneau du réacteur', moduleId: 'numeric_pad', visible: true },
+  { id: 'log_terminal',  roomId: 'energy', x: 0.22, y: 0.64, type: 'clue',   title: 'Terminal de logs',    moduleId: 'log_viewer',  visible: true },
+];
 
-const GameView = () => {
-  const { currentRoom, changeRoom } = useGame();
-  const { room } = useRoom();
-
-  const rooms = ['energy', 'system', 'navigation'] as const;
-  const currentIndex = rooms.indexOf(currentRoom);
-  const leftRoom = rooms[(currentIndex - 1 + rooms.length) % rooms.length];
-  const rightRoom = rooms[(currentIndex + 1) % rooms.length];
-
-  // --- Fonction pour rendre la bonne salle ---
-  const renderRoom = () => {
-    switch (currentRoom) {
-      case 'energy':
-        return <EnergyRoom />;
-      case 'system':
-        return <SystemRoom />;
-      case 'navigation':
-        return <NavigationRoom />;
-      default:
-        return <div>Room not found</div>;
-    }
+export const GameView: React.FC = () => {
+  const modules: Record<string, ModuleInstance> = {
+    numeric_pad: { id: 'numeric_pad', type: 'numeric_pad', state: 'available' },
+    log_viewer:  { id: 'log_viewer',  type: 'log_viewer',  state: 'available' },
   };
 
   return (
-    <div className="game-view">
-      {/* Flèche de navigation gauche */}
-      <button className="nav-arrow left" onClick={() => changeRoom('left')}>
-        &#8249;
-      </button>
-
-      {/* Conteneur principal de la salle */}
-      <div className="room-container">
-        {/* --- MODIFICATION : Remplacer RoomPlaceholder par renderRoom() --- */}
-        {renderRoom()}
-        <LyraPanel />
-      </div>
-
-      {/* Flèche de navigation droite */}
-      <button className="nav-arrow right" onClick={() => changeRoom('right')}>
-        &#8250;
-      </button>
-
-      <style jsx>{`
-        .game-view {
-          position: relative;
-          width: 100%;
-          height: 100%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
-
-        .room-container {
-          width: 80%;
-          height: 80%;
-          max-width: 1200px;
-          max-height: 800px;
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-        }
-
-        .nav-arrow {
-          position: absolute;
-          top: 50%;
-          transform: translateY(-50%);
-          background: rgba(0, 255, 247, 0.1);
-          border: 2px solid var(--accent-color);
-          color: var(--accent-color);
-          font-size: 3rem;
-          width: 80px;
-          height: 80px;
-          border-radius: 50%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          z-index: 20;
-        }
-
-        .nav-arrow:hover {
-          background: rgba(0, 255, 247, 0.2);
-          transform: translateY(-50%) scale(1.1);
-        }
-
-        .nav-arrow.left {
-          left: 20px;
-        }
-
-        .nav-arrow.right {
-          right: 20px;
-        }
-      `}</style>
+    <div className="relative w-full h-screen bg-black">
+      <RoomScene background="/images/rooms/energy_bg.jpg" hotspots={EnergyAct1Hotspots as any} modules={modules} />
+      <LyraBar message="Réacteur principal inactif. Protocole B7 requis." />
     </div>
   );
 };
