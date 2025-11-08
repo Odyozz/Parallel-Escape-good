@@ -1,9 +1,8 @@
-// components/game/GameView.tsx
 'use client';
 
 import React from 'react';
 import RoomScene from '@/app/game/RoomScene';
-import LyraBar from '@/app/game/LyraBar';
+import LyraBar   from '@/app/game/LyraBar';
 import type { ModuleInstance } from '@/app/docs/models';
 
 const EnergyAct1Hotspots = [
@@ -16,7 +15,6 @@ export const GameView: React.FC = () => {
     numeric_pad: { id: 'numeric_pad', type: 'numeric_pad', state: 'available' },
     log_viewer:  { id: 'log_viewer',  type: 'log_viewer',  state: 'available' },
   };
-
   return (
     <div className="relative w-full h-screen bg-black">
       <RoomScene background="/images/rooms/energy_bg.jpg" hotspots={EnergyAct1Hotspots as any} modules={modules} />
