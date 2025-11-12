@@ -8,11 +8,9 @@ const HotspotsLayer: React.FC<{
   onInteract: (h: Hotspot) => void;
 }> = ({ hotspots, onInteract }) => {
   return (
-    <div className="absolute inset-0 pointer-events-none">
+    <div style={{ position: 'absolute', inset: 0, zIndex: 60 }}>
       {hotspots.map((h) => (
-        <div key={h.id} className="pointer-events-auto">
-          <HotspotDot hotspot={h} onClick={onInteract} />
-        </div>
+        <HotspotDot key={h.id} hotspot={h} onClick={onInteract} />
       ))}
     </div>
   );

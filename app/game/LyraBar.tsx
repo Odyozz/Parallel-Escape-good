@@ -1,19 +1,36 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-const LyraBar: React.FC<{ message?: string }> = ({ message }) => {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    if (!message) return;
-    setVisible(true);
-    const t = setTimeout(() => setVisible(false), 5000);
-    return () => clearTimeout(t);
-  }, [message]);
-  if (!message || !visible) return null;
+interface LyraBarProps {
+  message?: string;
+}
+
+const LyraBar: React.FC<LyraBarProps> = ({ message }) => {
   return (
-    <div className="absolute bottom-0 left-0 w-full bg-black/60 text-white text-center py-2 text-sm">
-      <span className="text-blue-300">LYRA:</span> {message}
-    </div>
+    <AnimatePresence>
+      {message && (
+        <motion.div
+          key="lyra-bar"
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 40 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          className="fixed bottom-8 left-1/2 z-[90] -translate-x-1/2"
+        >
+          <div
+            className="backdrop-blur-md bg-black/60 border border-cyan-400/40 shadow-lg shadow-cyan-400/20
+                       px-6 py-4 rounded-2xl max-w-3xl text-center text-cyan-100 font-medium
+                       font-[Orbitron,monospace] tracking-wide text-lg"
+            style={{
+              textShadow: '0 0 10px rgba(0,255,255,0.35)',
+            }}
+          >
+            {message}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 

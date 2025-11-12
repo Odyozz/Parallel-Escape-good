@@ -704,3 +704,22 @@ p {
     text-align: center;
   }
 }
+
+html, body, #__next, :root {
+  height: 100%;
+  width: 100%;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #000; /* évite les bandes grises */
+}
+
+@keyframes pulse-soft {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+}
+.hotspot-pulse {
+  animation: pulse-soft 1.5s ease-in-out infinite;
+}

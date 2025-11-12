@@ -7,22 +7,33 @@ const HotspotDot: React.FC<{
   onClick: (h: Hotspot) => void;
 }> = ({ hotspot, onClick }) => {
   if (!hotspot.visible) return null;
+
   const color =
-    hotspot.type === 'puzzle' ? 'bg-blue-500'
-    : hotspot.type === 'clue' ? 'bg-green-400'
-    : hotspot.type === 'lure' ? 'bg-red-500'
-    : 'bg-gray-400';
+    hotspot.type === 'puzzle'   ? '#3B82F6' :
+    hotspot.type === 'clue'     ? '#34D399' :
+    hotspot.type === 'lure'     ? '#EF4444' :
+    hotspot.type === 'ambience' ? '#F59E0B' :
+    '#9CA3AF';
+
   return (
-    <div
-      className={`absolute ${color} rounded-full animate-pulse cursor-pointer`}
+    <button
+      type="button"
+      onClick={() => onClick(hotspot)}
+      title={hotspot.title}
+      aria-label={hotspot.title}
       style={{
+        position: 'absolute',
         left: `${hotspot.x * 100}%`,
         top: `${hotspot.y * 100}%`,
-        width: '1.2rem',
-        height: '1.2rem',
         transform: 'translate(-50%, -50%)',
+        width: 22,
+        height: 22,
+        borderRadius: '50%',
+        backgroundColor: color,
+        boxShadow: '0 0 0 2px rgba(255,255,255,0.7)',
+        cursor: 'pointer',
+        zIndex: 70,
       }}
-      onClick={() => onClick(hotspot)}
     />
   );
 };
